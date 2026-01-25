@@ -23,6 +23,7 @@ let timelineCards: Array<{ id: string; track_id: string; track_name: string; art
 let draggedCard: HTMLElement | null = null;
 let isRevealed: boolean = false;
 let dropIndicator: HTMLElement | null = null;
+let containerHandlersAttached: boolean = false;
 
 // Get game ID (host peer ID) from URL hash
 function getGameIdFromURL(): string | null {
@@ -297,8 +298,13 @@ function renderTimeline(): void {
   // Sort cards by position
   timelineCards.sort((a, b) => a.position - b.position);
 
-  // Build timeline - show all cards in chronological order
+  // Build timeline - show all cards in chronological order with drop zones
   let html = '';
+
+  // Add drop zone before the first card
+  if (!isRevealed) {
+    html += renderDropZone(-1);
+  }
 
   timelineCards.forEach((card, index) => {
     if (card.is_mystery) {
@@ -306,26 +312,46 @@ function renderTimeline(): void {
     } else {
       html += renderRegularCard(card, index);
     }
+    
+    // Add drop zone after each card
+    if (!isRevealed) {
+      html += renderDropZone(index);
+    }
   });
 
   playerTimeline.innerHTML = html;
 
-  // Add drag and drop event listeners to all cards (regular and mystery)
-  const allCardElements = playerTimeline.querySelectorAll('.timeline-card');
-  allCardElements.forEach((card) => {
+  // Only attach drag handlers to mystery card
+  const mysteryCardElement = playerTimeline.querySelector('.mystery-placeholder') as HTMLElement;
+  if (mysteryCardElement && !isRevealed) {
+    mysteryCardElement.addEventListener('dragstart', handleDragStart);
+    mysteryCardElement.addEventListener('dragend', handleDragEnd);
+  }
+
+  // Attach drop handlers to drop zones
+  const dropZoneElements = playerTimeline.querySelectorAll('.timeline-drop-zone');
+  dropZoneElements.forEach((zone) => {
+    const zoneElement = zone as HTMLElement;
+    zoneElement.addEventListener('dragover', handleDropZoneDragOver);
+    zoneElement.addEventListener('drop', handleDropZoneDrop);
+    zoneElement.addEventListener('dragenter', handleDropZoneDragEnter);
+    zoneElement.addEventListener('dragleave', handleDropZoneDragLeave);
+  });
+
+  // Attach drop handlers to regular cards (as drop targets) - keep for backward compatibility
+  const regularCardElements = playerTimeline.querySelectorAll('.timeline-card:not(.mystery-placeholder)');
+  regularCardElements.forEach((card) => {
     const cardElement = card as HTMLElement;
-
-    // Only allow dragging if not revealed
-    if (isRevealed) {
-      cardElement.setAttribute('draggable', 'false');
-      return;
-    }
-
-    cardElement.addEventListener('dragstart', handleDragStart);
-    cardElement.addEventListener('dragend', handleDragEnd);
     cardElement.addEventListener('dragover', handleDragOver);
     cardElement.addEventListener('drop', handleDrop);
   });
+
+  // Add container-level dragover handler (only once)
+  if (playerTimeline && !isRevealed && !containerHandlersAttached) {
+    playerTimeline.addEventListener('dragover', handleContainerDragOver);
+    playerTimeline.addEventListener('drop', handleDrop);
+    containerHandlersAttached = true;
+  }
 }
 
 // Drag and drop event handlers (defined outside renderTimeline to avoid recreating)
@@ -343,6 +369,14 @@ function handleDragStart(e: Event): void {
     dropIndicator = document.createElement('div');
     dropIndicator.className = 'drop-indicator';
   }
+
+  // Show all drop zones when dragging starts
+  if (playerTimeline) {
+    const dropZones = playerTimeline.querySelectorAll('.timeline-drop-zone');
+    dropZones.forEach((zone) => {
+      (zone as HTMLElement).classList.add('drop-zone-visible');
+    });
+  }
 }
 
 function handleDragEnd(): void {
@@ -354,6 +388,16 @@ function handleDragEnd(): void {
   // Remove drop indicator from DOM
   if (dropIndicator && dropIndicator.parentNode) {
     dropIndicator.parentNode.removeChild(dropIndicator);
+  }
+
+  // Hide all drop zones when dragging ends
+  if (playerTimeline) {
+    const dropZones = playerTimeline.querySelectorAll('.timeline-drop-zone');
+    dropZones.forEach((zone) => {
+      const zoneElement = zone as HTMLElement;
+      zoneElement.classList.remove('drop-zone-visible');
+      zoneElement.classList.remove('drop-zone-active');
+    });
   }
 }
 
@@ -391,11 +435,72 @@ function handleDrop(e: Event): void {
   updateTimelinePositions();
 }
 
+// Handle dragover on timeline container
+function handleContainerDragOver(e: Event): void {
+  const dragEvent = e as DragEvent;
+  dragEvent.preventDefault();
+  if (dragEvent.dataTransfer) {
+    dragEvent.dataTransfer.dropEffect = 'move';
+  }
+}
+
+// Handle dragover on drop zone
+function handleDropZoneDragOver(e: Event): void {
+  const dragEvent = e as DragEvent;
+  dragEvent.preventDefault();
+  if (dragEvent.dataTransfer) {
+    dragEvent.dataTransfer.dropEffect = 'move';
+  }
+}
+
+// Handle dragenter on drop zone
+function handleDropZoneDragEnter(e: Event): void {
+  const dragEvent = e as DragEvent;
+  const zoneElement = dragEvent.currentTarget as HTMLElement;
+  if (draggedCard) {
+    zoneElement.classList.add('drop-zone-active');
+  }
+}
+
+// Handle dragleave on drop zone
+function handleDropZoneDragLeave(e: Event): void {
+  const dragEvent = e as DragEvent;
+  const zoneElement = dragEvent.currentTarget as HTMLElement;
+  zoneElement.classList.remove('drop-zone-active');
+}
+
+// Handle drop on drop zone
+function handleDropZoneDrop(e: Event): void {
+  e.preventDefault();
+  const dragEvent = e as DragEvent;
+  const zoneElement = dragEvent.currentTarget as HTMLElement;
+  zoneElement.classList.remove('drop-zone-active');
+  
+  if (!draggedCard || !playerTimeline) return;
+  
+  // Find the next sibling that is a card (not a drop zone)
+  let nextSibling = zoneElement.nextElementSibling;
+  while (nextSibling && nextSibling.classList.contains('timeline-drop-zone')) {
+    nextSibling = nextSibling.nextElementSibling;
+  }
+  
+  // Insert the dragged card after the drop zone, before the next card
+  if (nextSibling) {
+    playerTimeline.insertBefore(draggedCard, nextSibling);
+  } else {
+    // No next sibling, append to end
+    playerTimeline.appendChild(draggedCard);
+  }
+  
+  // Update positions
+  updateTimelinePositions();
+}
+
 // Render a regular card
 function renderRegularCard(card: typeof timelineCards[0], index: number): string {
   return `
-    <div class="timeline-card" 
-         draggable="${!isRevealed}" 
+    <div class="timeline-card"
+         draggable="false"
          data-card-id="${card.id}"
          data-position="${index}">
       <div class="card-content">
@@ -436,6 +541,13 @@ function renderMysteryCard(card: typeof timelineCards[0], index?: number): strin
         `}
       </div>
     </div>
+  `;
+}
+
+// Render drop zone
+function renderDropZone(afterIndex: number): string {
+  return `
+    <div class="timeline-drop-zone" data-drop-index="${afterIndex}"></div>
   `;
 }
 
