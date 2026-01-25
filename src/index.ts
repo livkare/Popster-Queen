@@ -5,7 +5,7 @@ import { gameState } from './game-state';
 import { generateQRCode } from './qr-code';
 import { randomUUID } from './utils';
 import { initializePlayerJoin, isPlayerJoinPage } from './player-join';
-import { fetchUserPlaylists, fetchPlaylistTracks, extractReleaseYear, startPlayback, pausePlayback, fetchTrackDetails, ensureDeviceActive } from './spotify-api';
+import { fetchUserPlaylists, fetchPlaylistTracks, extractReleaseYear, startPlayback, pausePlayback, fetchTrackDetails, ensureDeviceActive, searchPlaylists } from './spotify-api';
 
 const playButton = document.getElementById('playButton');
 const homepage = document.getElementById('homepage');
@@ -24,6 +24,11 @@ const playlistErrorText = document.getElementById('playlist-error-text');
 const playlistList = document.getElementById('playlist-list');
 const playlistStatus = document.getElementById('playlist-status');
 const startGameButton = document.getElementById('start-game-button') as HTMLButtonElement | null;
+const tabMyPlaylists = document.getElementById('tab-my-playlists');
+const tabSearch = document.getElementById('tab-search');
+const playlistSearchSection = document.getElementById('playlist-search-section');
+const playlistSearchInput = document.getElementById('playlist-search-input') as HTMLInputElement | null;
+const playlistSearchButton = document.getElementById('playlist-search-button');
 const gamePage = document.getElementById('game-page');
 const mysteryCard = document.getElementById('mystery-card');
 const playMysteryButton = document.getElementById('play-mystery-button') as HTMLButtonElement | null;
@@ -82,7 +87,10 @@ async function initializeHostPeer(): Promise<void> {
         gameState.createGame(gameId);
 
         console.log('Host peer initialized with ID:', peerId);
-        updateQRCode();
+        // Small delay to ensure page is fully rendered
+        setTimeout(() => {
+            updateQRCode();
+        }, 100);
 
         // Handle player join requests
         peerHost.on('PLAYER_JOIN', (message, conn) => {
@@ -176,12 +184,23 @@ function broadcastPlayerList(): void {
 
 // Update QR code display
 function updateQRCode(): void {
-    if (!qrCodeContainer || !gameId) return;
+    if (!qrCodeContainer || !gameId) {
+        console.warn('Cannot update QR code: container or gameId missing', { qrCodeContainer, gameId });
+        return;
+    }
+
+    // Ensure container is visible
+    if (qrCodeContainer.parentElement) {
+        qrCodeContainer.parentElement.style.display = 'flex';
+    }
+    qrCodeContainer.style.display = 'flex';
+    qrCodeContainer.style.visibility = 'visible';
 
     // Generate join URL with host peer ID (same as gameId)
     const baseUrl = window.location.origin + window.location.pathname;
     const joinUrl = `${baseUrl}#/join/${gameId}`;
 
+    console.log('Updating QR code with URL:', joinUrl);
     generateQRCode(joinUrl, qrCodeContainer);
 }
 
@@ -365,6 +384,8 @@ playButton?.addEventListener('click', () => {
 function showPlaylistModal(): void {
     if (playlistModal) {
         playlistModal.style.display = 'flex';
+        // Reset to "My Playlists" tab
+        switchToTab('my-playlists');
         loadPlaylists();
     }
 }
@@ -998,6 +1019,86 @@ async function handleNextCard(): Promise<void> {
     updateButtonState('play');
 }
 
+// Switch between tabs
+function switchToTab(tabName: 'my-playlists' | 'search'): void {
+    // Update tab buttons
+    if (tabMyPlaylists && tabSearch) {
+        if (tabName === 'my-playlists') {
+            tabMyPlaylists.classList.add('active');
+            tabSearch.classList.remove('active');
+            if (playlistSearchSection) {
+                playlistSearchSection.style.display = 'none';
+            }
+            loadPlaylists();
+        } else {
+            tabMyPlaylists.classList.remove('active');
+            tabSearch.classList.add('active');
+            if (playlistSearchSection) {
+                playlistSearchSection.style.display = 'block';
+            }
+            if (playlistList) {
+                playlistList.innerHTML = '<p style="text-align: center; color: rgba(0, 0, 0, 0.6); padding: 2rem;">Enter a search term to find playlists on Spotify</p>';
+            }
+        }
+    }
+}
+
+// Search for playlists on Spotify
+async function searchSpotifyPlaylists(query: string): Promise<void> {
+    if (!playlistLoading || !playlistError || !playlistErrorText || !playlistList) return;
+
+    if (!query || query.trim().length === 0) {
+        playlistList.innerHTML = '<p style="text-align: center; color: rgba(0, 0, 0, 0.6); padding: 2rem;">Please enter a search term</p>';
+        return;
+    }
+
+    // Show loading state
+    playlistLoading.style.display = 'block';
+    playlistError.style.display = 'none';
+    playlistList.innerHTML = '';
+
+    try {
+        const token = await getValidAccessToken();
+        if (!token) {
+            throw new Error('Not authenticated with Spotify');
+        }
+
+        const playlists = await searchPlaylists(token, query, 20);
+
+        // Hide loading state
+        playlistLoading.style.display = 'none';
+
+        if (playlists.length === 0) {
+            playlistList.innerHTML = '<p style="text-align: center; color: rgba(0, 0, 0, 0.6); padding: 2rem;">No playlists found. Try a different search term.</p>';
+            return;
+        }
+
+        // Display playlists
+        playlistList.innerHTML = playlists.map(playlist => `
+            <div class="playlist-item" data-playlist-id="${playlist.id}" data-playlist-name="${playlist.name}">
+                <div class="playlist-item-name">${playlist.name}</div>
+                <div class="playlist-item-info">${playlist.owner?.display_name || 'Spotify'} • ${playlist.tracks.total} tracks</div>
+            </div>
+        `).join('');
+
+        // Add click handlers to playlist items
+        playlistList.querySelectorAll('.playlist-item').forEach(item => {
+            item.addEventListener('click', async () => {
+                const playlistId = item.getAttribute('data-playlist-id');
+                const playlistName = item.getAttribute('data-playlist-name');
+                if (playlistId && playlistName) {
+                    await selectPlaylist(playlistId, playlistName);
+                }
+            });
+        });
+    } catch (error) {
+        console.error('Error searching playlists:', error);
+        playlistLoading.style.display = 'none';
+        playlistError.style.display = 'block';
+        playlistErrorText.textContent = error instanceof Error ? error.message : 'Failed to search playlists';
+    }
+}
+
 // Initialize playlist selection handlers
 function initializePlaylistSelection(): void {
     // Open modal when button is clicked
@@ -1014,6 +1115,29 @@ function initializePlaylistSelection(): void {
     modalBackdrop?.addEventListener('click', (e) => {
         if (e.target === modalBackdrop) {
             hidePlaylistModal();
+        }
+    });
+
+    // Tab switching
+    tabMyPlaylists?.addEventListener('click', () => {
+        switchToTab('my-playlists');
+    });
+
+    tabSearch?.addEventListener('click', () => {
+        switchToTab('search');
+    });
+
+    // Search functionality
+    playlistSearchButton?.addEventListener('click', () => {
+        if (playlistSearchInput) {
+            searchSpotifyPlaylists(playlistSearchInput.value);
+        }
+    });
+
+    // Search on Enter key
+    playlistSearchInput?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && playlistSearchInput) {
+            searchSpotifyPlaylists(playlistSearchInput.value);
         }
     });
 }

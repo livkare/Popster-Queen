@@ -61,6 +61,30 @@ export async function fetchUserPlaylists(token: string): Promise<SpotifyPlaylist
   return playlists;
 }
 
+// Search for playlists on Spotify
+export async function searchPlaylists(token: string, query: string, limit: number = 20): Promise<SpotifyPlaylist[]> {
+  if (!query || query.trim().length === 0) {
+    return [];
+  }
+
+  const encodedQuery = encodeURIComponent(query.trim());
+  const url = `${SPOTIFY_API_BASE}/search?q=${encodedQuery}&type=playlist&limit=${limit}`;
+
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(`Failed to search playlists: ${error.error?.message || response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.playlists?.items || [];
+}
+
 // Fetch all tracks from a playlist with pagination
 export async function fetchPlaylistTracks(token: string, playlistId: string): Promise<SpotifyTrackItem[]> {
   const tracks: SpotifyTrackItem[] = [];

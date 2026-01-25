@@ -39,7 +39,9 @@
             <div class="host-section">
                 <div class="qr-section">
                     <h2 class="section-title">Scan to Join</h2>
-                    <div id="qr-code-container" class="qr-code-container"></div>
+                    <div id="qr-code-container" class="qr-code-container">
+                        <p style="color: var(--color-text-base);">Loading QR code...</p>
+                    </div>
                 </div>
                 <div class="players-section">
                     <h2 class="section-title">Players</h2>
@@ -75,6 +77,35 @@
                         </button>
                     </div>
                     <div id="playlist-modal-body" class="modal-body">
+                        <!-- Tabs -->
+                        <div class="playlist-tabs">
+                            <button id="tab-my-playlists" class="playlist-tab active" data-tab="my-playlists">
+                                My Playlists
+                            </button>
+                            <button id="tab-search" class="playlist-tab" data-tab="search">
+                                Search Spotify
+                            </button>
+                        </div>
+                        
+                        <!-- Search Section (hidden by default) -->
+                        <div id="playlist-search-section" class="playlist-search-section" style="display: none;">
+                            <div class="playlist-search-input-wrapper">
+                                <input 
+                                    type="text" 
+                                    id="playlist-search-input" 
+                                    class="playlist-search-input" 
+                                    placeholder="Search for playlists on Spotify..."
+                                    autocomplete="off"
+                                />
+                                <button id="playlist-search-button" class="playlist-search-button" aria-label="Search">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="11" cy="11" r="8"></circle>
+                                        <path d="m21 21-4.35-4.35"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        
                         <div id="playlist-loading" class="playlist-loading" style="display: none;">
                             <div class="loading-spinner"></div>
                             <p>Loading playlists...</p>
