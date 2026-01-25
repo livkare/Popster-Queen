@@ -96,7 +96,8 @@ export async function searchPlaylists(token: string, query: string, limit: numbe
 // Fetch all tracks from a playlist with pagination
 export async function fetchPlaylistTracks(token: string, playlistId: string): Promise<SpotifyTrackItem[]> {
   const tracks: SpotifyTrackItem[] = [];
-  let url = `${SPOTIFY_API_BASE}/playlists/${playlistId}/tracks?limit=50`;
+  // Add market parameter and fields to get full track data including album release_date
+  let url = `${SPOTIFY_API_BASE}/playlists/${playlistId}/tracks?limit=50&market=from_token&additional_types=track`;
 
   while (url) {
     const response = await fetch(url, {

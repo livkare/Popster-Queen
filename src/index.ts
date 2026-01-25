@@ -491,21 +491,64 @@ async function selectPlaylist(playlistId: string, playlistName: string): Promise
         const trackItems = await fetchPlaylistTracks(token, playlistId);
 
         // Parse tracks and extract metadata
-        const tracks: PlaylistTrack[] = trackItems
-            .filter(item => item.track !== null && item.track.id) // Filter out null tracks and tracks without ID
+        // First pass: extract what we can from playlist track data
+        const tracksWithPartialData = trackItems
+            .filter(item => item.track !== null && item.track.id)
             .map(item => {
                 const track = item.track!;
                 const artist = track.artists && track.artists.length > 0 ? track.artists[0].name : 'Unknown Artist';
                 const year = extractReleaseYear(track.album?.release_date);
+                const hasReleaseDate = track.album?.release_date && year !== null;
 
                 return {
                     id: track.id,
                     name: track.name || 'Unknown Track',
                     artist: artist,
                     year: year,
-                    used: false
+                    used: false,
+                    needsFullDetails: !hasReleaseDate // Flag tracks that need full details
                 };
             });
+
+        // Fetch full track details for tracks missing release date
+        const tracks: PlaylistTrack[] = await Promise.all(
+            tracksWithPartialData.map(async (trackData) => {
+                if (trackData.needsFullDetails) {
+                    try {
+                        console.log(`Fetching full details for track ${trackData.id} to get correct release date`);
+                        const fullDetails = await fetchTrackDetails(token, trackData.id);
+                        const correctYear = extractReleaseYear(fullDetails.album.release_date);
+                        console.log(`Track ${trackData.name} - Release date: ${fullDetails.album.release_date}, Year: ${correctYear}`);
+                        return {
+                            id: trackData.id,
+                            name: trackData.name,
+                            artist: trackData.artist,
+                            year: correctYear,
+                            used: false
+                        };
+                    } catch (error) {
+                        console.warn(`Failed to fetch full details for track ${trackData.id}:`, error);
+                        // Fall back to partial data
+                        return {
+                            id: trackData.id,
+                            name: trackData.name,
+                            artist: trackData.artist,
+                            year: trackData.year,
+                            used: false
+                        };
+                    }
+                } else {
+                    // Already have release date, use it
+                    return {
+                        id: trackData.id,
+                        name: trackData.name,
+                        artist: trackData.artist,
+                        year: trackData.year,
+                        used: false
+                    };
+                }
+            })
+        );
 
         // Store selected playlist in memory
         selectedPlaylist = {

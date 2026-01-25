@@ -477,7 +477,13 @@ function handleDropZoneDrop(e: Event): void {
   const zoneElement = dragEvent.currentTarget as HTMLElement;
   zoneElement.classList.remove('drop-zone-active');
   
-  if (!draggedCard || !playerTimeline) return;
+  if (!draggedCard || !playerTimeline) {
+    console.warn('Cannot drop: missing draggedCard or playerTimeline');
+    return;
+  }
+  
+  const cardId = draggedCard.getAttribute('data-card-id');
+  console.log('Dropping card:', cardId, 'on drop zone');
   
   // Find the next sibling that is a card (not a drop zone, and not the dragged card itself)
   let nextSibling = zoneElement.nextElementSibling;
@@ -485,34 +491,33 @@ function handleDropZoneDrop(e: Event): void {
     if (nextSibling.classList.contains('timeline-drop-zone')) {
       nextSibling = nextSibling.nextElementSibling;
     } else if (nextSibling === draggedCard) {
-      // Skip the dragged card itself, find the next one
+      // Skip the dragged card itself if it's the next sibling
       nextSibling = nextSibling.nextElementSibling;
     } else if (nextSibling.classList.contains('timeline-card')) {
-      // Found a card that's not the dragged card
+      // Found a card that's not the dragged card - insert before it
       break;
     } else {
-      // Not a card or drop zone, skip
       nextSibling = nextSibling.nextElementSibling;
     }
   }
   
   // Insert the dragged card after the drop zone, before the next card
-  // If draggedCard is already in the DOM, insertBefore will move it
+  // insertBefore automatically moves the element if it's already in the DOM
   if (nextSibling && nextSibling !== draggedCard) {
+    console.log('Inserting card before:', nextSibling.getAttribute('data-card-id'));
     playerTimeline.insertBefore(draggedCard, nextSibling);
-  } else if (!nextSibling) {
-    // No next sibling, append to end (only if not already at end)
-    if (draggedCard.parentNode === playerTimeline && draggedCard.nextElementSibling) {
-      // Card is already in DOM but not at end, move it
-      playerTimeline.appendChild(draggedCard);
-    } else if (draggedCard.parentNode !== playerTimeline) {
-      // Card is not in DOM (shouldn't happen, but handle it)
-      playerTimeline.appendChild(draggedCard);
-    }
+  } else {
+    // No next card found, append to end
+    console.log('Appending card to end');
+    playerTimeline.appendChild(draggedCard);
   }
-  // If nextSibling === draggedCard, we're trying to insert before itself, which is a no-op
   
-  // Update positions
+  // Verify the card moved
+  const allCards = Array.from(playerTimeline.querySelectorAll('.timeline-card'));
+  const newIndex = allCards.indexOf(draggedCard);
+  console.log('Card moved to position:', newIndex, 'out of', allCards.length, 'cards');
+  
+  // Update positions based on new DOM order
   updateTimelinePositions();
 }
 
