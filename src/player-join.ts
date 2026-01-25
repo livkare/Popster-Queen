@@ -384,6 +384,7 @@ function handleDragEnd(): void {
     draggedCard.classList.remove('dragging');
   }
   draggedCard = null;
+  lastHoveredDropZone = null; // Reset hover tracking
 
   // Remove drop indicator from DOM
   if (dropIndicator && dropIndicator.parentNode) {
@@ -444,12 +445,67 @@ function handleContainerDragOver(e: Event): void {
   }
 }
 
+// Track the last drop zone we hovered over to avoid unnecessary DOM manipulation
+let lastHoveredDropZone: HTMLElement | null = null;
+
 // Handle dragover on drop zone
 function handleDropZoneDragOver(e: Event): void {
   const dragEvent = e as DragEvent;
   dragEvent.preventDefault();
   if (dragEvent.dataTransfer) {
     dragEvent.dataTransfer.dropEffect = 'move';
+  }
+  
+  if (!draggedCard || !playerTimeline) return;
+  
+  const zoneElement = dragEvent.currentTarget as HTMLElement;
+  
+  // Skip if we're still hovering over the same drop zone
+  if (lastHoveredDropZone === zoneElement) {
+    return;
+  }
+  lastHoveredDropZone = zoneElement;
+  
+  // Find the next sibling that is a card (not a drop zone, and not the dragged card itself)
+  let nextSibling = zoneElement.nextElementSibling;
+  while (nextSibling) {
+    if (nextSibling.classList.contains('timeline-drop-zone')) {
+      nextSibling = nextSibling.nextElementSibling;
+    } else if (nextSibling === draggedCard) {
+      // Skip the dragged card itself if it's the next sibling
+      nextSibling = nextSibling.nextElementSibling;
+    } else if (nextSibling.classList.contains('timeline-card')) {
+      // Found a card that's not the dragged card - insert before it
+      break;
+    } else {
+      nextSibling = nextSibling.nextElementSibling;
+    }
+  }
+  
+  // Move the card visually during drag (preview the position)
+  // Only move if it's not already in the correct position
+  const currentNextSibling = draggedCard.nextElementSibling;
+  if (nextSibling && nextSibling !== draggedCard && currentNextSibling !== nextSibling) {
+    // Insert the card at the preview position
+    playerTimeline.insertBefore(draggedCard, nextSibling);
+  } else if (!nextSibling) {
+    // No next card found, ensure it's at the end
+    if (draggedCard.nextElementSibling || draggedCard.parentNode !== playerTimeline) {
+      playerTimeline.appendChild(draggedCard);
+    }
+  }
+  
+  // Update drop indicator position
+  if (dropIndicator) {
+    if (nextSibling) {
+      if (dropIndicator.parentNode !== playerTimeline || dropIndicator.nextElementSibling !== nextSibling) {
+        playerTimeline.insertBefore(dropIndicator, nextSibling);
+      }
+    } else {
+      if (dropIndicator.parentNode !== playerTimeline || dropIndicator.nextElementSibling !== null) {
+        playerTimeline.appendChild(dropIndicator);
+      }
+    }
   }
 }
 
@@ -467,6 +523,11 @@ function handleDropZoneDragLeave(e: Event): void {
   const dragEvent = e as DragEvent;
   const zoneElement = dragEvent.currentTarget as HTMLElement;
   zoneElement.classList.remove('drop-zone-active');
+  
+  // Reset last hovered drop zone if we're leaving it
+  if (lastHoveredDropZone === zoneElement) {
+    lastHoveredDropZone = null;
+  }
 }
 
 // Handle drop on drop zone
@@ -485,6 +546,9 @@ function handleDropZoneDrop(e: Event): void {
   const cardId = draggedCard.getAttribute('data-card-id');
   console.log('Dropping card:', cardId, 'on drop zone');
   
+  // The card should already be in the correct position from dragover
+  // But let's ensure it's in the right place
+  
   // Find the next sibling that is a card (not a drop zone, and not the dragged card itself)
   let nextSibling = zoneElement.nextElementSibling;
   while (nextSibling) {
@@ -501,23 +565,27 @@ function handleDropZoneDrop(e: Event): void {
     }
   }
   
-  // Insert the dragged card after the drop zone, before the next card
-  // insertBefore automatically moves the element if it's already in the DOM
+  // Ensure the card is in the correct position (it should already be from dragover)
   if (nextSibling && nextSibling !== draggedCard) {
-    console.log('Inserting card before:', nextSibling.getAttribute('data-card-id'));
-    playerTimeline.insertBefore(draggedCard, nextSibling);
-  } else {
-    // No next card found, append to end
-    console.log('Appending card to end');
-    playerTimeline.appendChild(draggedCard);
+    const currentNext = draggedCard.nextElementSibling;
+    if (currentNext !== nextSibling) {
+      console.log('Finalizing card position before:', nextSibling.getAttribute('data-card-id'));
+      playerTimeline.insertBefore(draggedCard, nextSibling);
+    }
+  } else if (!nextSibling) {
+    // No next card found, ensure it's at the end
+    if (draggedCard.nextElementSibling) {
+      console.log('Finalizing card position at end');
+      playerTimeline.appendChild(draggedCard);
+    }
   }
   
   // Verify the card moved
   const allCards = Array.from(playerTimeline.querySelectorAll('.timeline-card'));
   const newIndex = allCards.indexOf(draggedCard);
-  console.log('Card moved to position:', newIndex, 'out of', allCards.length, 'cards');
+  console.log('Card finalized at position:', newIndex, 'out of', allCards.length, 'cards');
   
-  // Update positions based on new DOM order
+  // Update positions in frontend data model
   updateTimelinePositions();
 }
 
@@ -618,20 +686,29 @@ function updateTimelinePositions(): void {
       // Update all cards (regular and mystery) that aren't revealed
       // The dragged card may still have the 'dragging' class, but we still want to update its position
       if (cardData && !cardData.is_revealed) {
+        const oldPosition = cardData.position;
         cardData.position = positionIndex;
-        updates.push({ id: cardId, position: positionIndex });
+        
+        // Only include in updates if position actually changed
+        if (oldPosition !== positionIndex) {
+          updates.push({ id: cardId, position: positionIndex });
+          console.log(`Card ${cardId} position updated: ${oldPosition} -> ${positionIndex}`);
+        }
         positionIndex++;
       }
     }
   });
 
-  // Send update to host
+  // Send update to host (send all card positions to ensure consistency)
   if (updates.length > 0) {
+    console.log(`Sending timeline update with ${updates.length} position changes`);
     peerPlayer.send({
       type: 'UPDATE_TIMELINE',
       playerId,
       timelineUpdates: updates
     });
+  } else {
+    console.log('No position changes detected');
   }
 }
 

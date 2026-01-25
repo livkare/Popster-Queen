@@ -155,11 +155,18 @@ async function initializeHostPeer(): Promise<void> {
         peerHost.on('UPDATE_TIMELINE', (message, conn) => {
             const { playerId, timelineUpdates } = message;
             if (!playerId || !timelineUpdates) {
+                console.warn('Invalid timeline update:', { playerId, timelineUpdates });
                 peerHost!.sendToPlayer(playerId, { type: 'ERROR', message: 'Missing required fields' });
                 return;
             }
 
+            console.log(`Updating timeline for player ${playerId} with ${timelineUpdates.length} position changes`);
             gameState.updateTimelinePositions(playerId, timelineUpdates);
+            
+            // Verify the update was applied
+            const timeline = gameState.getPlayerTimeline(playerId);
+            console.log(`Timeline updated. Current positions:`, timeline.map(c => ({ id: c.id, position: c.position })));
+            
             peerHost!.sendToPlayer(playerId, {
                 type: 'TIMELINE_UPDATED',
                 success: true
