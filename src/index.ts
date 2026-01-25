@@ -81,7 +81,23 @@ async function initializeHostPeer(): Promise<void> {
 
     try {
         peerHost = new PeerHostManager();
-        const peerId = await peerHost.initialize(gameId);
+        let peerId: string;
+        
+        try {
+            peerId = await peerHost.initialize(gameId);
+        } catch (error: any) {
+            // Handle "ID is taken" error by generating a new gameId
+            if (error.message === 'PEER_ID_TAKEN') {
+                console.warn('Game ID is taken, generating new one...');
+                gameId = randomUUID();
+                localStorage.setItem('hostGameId', gameId);
+                // Retry with new ID
+                peerHost = new PeerHostManager();
+                peerId = await peerHost.initialize(gameId);
+            } else {
+                throw error;
+            }
+        }
 
         // Create game in state
         gameState.createGame(gameId);
@@ -195,13 +211,21 @@ function updateQRCode(): void {
     }
     qrCodeContainer.style.display = 'flex';
     qrCodeContainer.style.visibility = 'visible';
+    qrCodeContainer.style.minWidth = '300px';
+    qrCodeContainer.style.minHeight = '300px';
 
     // Generate join URL with host peer ID (same as gameId)
     const baseUrl = window.location.origin + window.location.pathname;
     const joinUrl = `${baseUrl}#/join/${gameId}`;
 
     console.log('Updating QR code with URL:', joinUrl);
-    generateQRCode(joinUrl, qrCodeContainer);
+    console.log('QR code container:', qrCodeContainer);
+    console.log('Container computed style:', window.getComputedStyle(qrCodeContainer).display);
+    
+    // Small delay to ensure container is rendered
+    setTimeout(() => {
+        generateQRCode(joinUrl, qrCodeContainer);
+    }, 200);
 }
 
 // Update host player list
@@ -1068,16 +1092,23 @@ async function searchSpotifyPlaylists(query: string): Promise<void> {
         // Hide loading state
         playlistLoading.style.display = 'none';
 
-        if (playlists.length === 0) {
+        // Filter out null/undefined playlists and those without IDs
+        const validPlaylists = playlists.filter(playlist => 
+            playlist && 
+            playlist.id && 
+            playlist.name
+        );
+
+        if (validPlaylists.length === 0) {
             playlistList.innerHTML = '<p style="text-align: center; color: rgba(0, 0, 0, 0.6); padding: 2rem;">No playlists found. Try a different search term.</p>';
             return;
         }
 
         // Display playlists
-        playlistList.innerHTML = playlists.map(playlist => `
+        playlistList.innerHTML = validPlaylists.map(playlist => `
             <div class="playlist-item" data-playlist-id="${playlist.id}" data-playlist-name="${playlist.name}">
                 <div class="playlist-item-name">${playlist.name}</div>
-                <div class="playlist-item-info">${playlist.owner?.display_name || 'Spotify'} • ${playlist.tracks.total} tracks</div>
+                <div class="playlist-item-info">${playlist.owner?.display_name || 'Spotify'} • ${playlist.tracks?.total || 0} tracks</div>
             </div>
         `).join('');
 

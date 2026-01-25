@@ -350,7 +350,7 @@ body {
 
 /* QR Code Container */
 .qr-code-container {
-  background: var(--color-text-base);
+  background: #FFFFFF;
   padding: var(--space-4);
   border-radius: var(--radius-md);
   display: flex;
@@ -363,10 +363,12 @@ body {
 }
 
 .qr-code-container canvas {
-  display: block;
-  width: 100%;
-  max-width: 300px;
-  height: auto;
+  display: block !important;
+  width: 300px !important;
+  height: 300px !important;
+  max-width: 100%;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
 }
 
 /* Player List */

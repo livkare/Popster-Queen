@@ -28,9 +28,24 @@ export class PeerHostManager {
         this.handleNewConnection(conn);
       });
 
-      this.peer.on('error', (err) => {
-        console.error('Peer error:', err);
-        reject(err);
+      this.peer.on('error', (err: any) => {
+        // Handle "ID is taken" error - this happens when the ID is already in use
+        if (err.type === 'peer-unavailable' || err.message?.includes('is taken')) {
+          console.warn('Peer ID is taken:', gameId);
+          // Destroy the peer and reject with a special error that indicates ID conflict
+          if (this.peer && !this.peer.destroyed) {
+            this.peer.destroy();
+          }
+          this.peer = null;
+          // Reject with a special error that the caller can handle
+          const idConflictError = new Error('PEER_ID_TAKEN') as any;
+          idConflictError.originalError = err;
+          idConflictError.requestedId = gameId;
+          reject(idConflictError);
+        } else {
+          console.error('Peer error:', err);
+          reject(err);
+        }
       });
 
       this.peer.on('disconnected', () => {

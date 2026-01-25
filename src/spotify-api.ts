@@ -82,7 +82,15 @@ export async function searchPlaylists(token: string, query: string, limit: numbe
   }
 
   const data = await response.json();
-  return data.playlists?.items || [];
+  const items = data.playlists?.items || [];
+  
+  // Filter out any null/undefined items
+  return items.filter((playlist: SpotifyPlaylist | null): playlist is SpotifyPlaylist => 
+    playlist !== null && 
+    playlist !== undefined && 
+    typeof playlist.id === 'string' && 
+    typeof playlist.name === 'string'
+  );
 }
 
 // Fetch all tracks from a playlist with pagination
